@@ -8,6 +8,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 import lombok.Getter;
 import net.kyori.adventure.text.minimessage.MiniMessage;
 import nl.oxod.oxlib.api.commands.CommandManager;
+import nl.oxod.oxlib.commands.OxLibCommand;
 import nl.oxod.oxlib.config.Config;
 
 @edu.umd.cs.findbugs.annotations.SuppressFBWarnings({ "UWF_UNWRITTEN_FIELD", "ST_WRITE_TO_STATIC_FROM_INSTANCE_METHOD",
@@ -35,5 +36,11 @@ public class OxLib extends JavaPlugin implements Listener {
     instance = this;
     libConfig = new Config();
     libConfig.load();
+  }
+
+  @Override
+  public void onEnable() {
+    new CommandManager(this, getName())
+        .setMainSubCommand(new OxLibCommand());
   }
 }
