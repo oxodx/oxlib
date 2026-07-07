@@ -26,8 +26,7 @@ public class OxLibCommand extends SubCommand {
   @Override
   public Boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label,
       SubCommandResult result) {
-    if (sender instanceof Player) {
-      Player player = (Player) sender;
+    if (sender instanceof Player player) {
       PluginDescriptionFile pluginInfo = this.getPlugin().getDescription();
 
       TextComponent.Builder message = Component.text()

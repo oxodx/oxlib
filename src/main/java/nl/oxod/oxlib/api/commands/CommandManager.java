@@ -104,69 +104,65 @@ public class CommandManager implements TabExecutor {
     return false;
   }
 
-  public static String textLimit(String text, int limit, int wordLimit) {
-    if (text.length() <= limit) {
-      return text;
-    }
-
-    int lastSpace = text.lastIndexOf(" ", limit - 3);
-    if ((limit - 3) - (lastSpace + 1) <= wordLimit) {
-      text = text.substring(0, lastSpace);
-    } else {
-      text = text.substring(0, limit - 3);
-    }
-
-    return text.replaceAll("\\s*$", "") + "...";
-  }
-
-  public static String textLimit(String text, int limit) {
-    return textLimit(text, limit, 5);
-  }
-
   protected SubCommandResult querySubCommand(@NotNull ArrayList<SubCommand> subCommands, @NotNull String[] arguments) {
-    if (arguments.length > 0) {
-      for (SubCommand subCommand : subCommands) {
-        if (subCommand.name.equals(arguments[0]) || Arrays.asList(subCommand.aliases).contains(arguments[0])) {
-          if (arguments.length > 1) {
-            if (subCommand.acceptOverflows) {
-              return new SubCommandResult(subCommand, arguments, 1);
-            } else {
-              SubCommandResult result = this.querySubCommand(subCommand.subcommands,
-                  Arrays.copyOfRange(arguments, 1, arguments.length));
-              if (result.subCommand != null) {
-                return new SubCommandResult(result.subCommand, arguments, result.currentArgumentIndex + 1,
-                    result.isValid, result.isUsage, result.currentUsageIndex);
-              } else {
-                boolean valid = true;
-                int i;
-                for (i = 0; i < subCommand.usage.length && i < arguments.length - 1; i++) {
-                  List<String> usage = Arrays.asList(subCommand.usage[i]);
-                  String argument = arguments[i + 1];
+    if (arguments.length == 0) {
+      return new SubCommandResult(null, arguments, 0);
+    }
 
-                  if (!containsUnofficialArgumentKeywords(usage)
-                      && !((usage.contains(argument) && !isOfficialArgumentKeyword(argument))
-                          || (usage.contains("%number%") && isStringInteger(argument))
-                          || (usage.contains("%decimal%") && isStringDouble(argument))
-                          || (usage.contains("%player%") && Bukkit.getPlayer(argument) != null))) {
-                    valid = false;
-                    break;
-                  }
-                }
+    SubCommand matched = findSubCommand(subCommands, arguments[0]);
+    if (matched == null) {
+      return new SubCommandResult(null, arguments, 0);
+    }
 
-                if (valid && arguments.length - 1 <= subCommand.usage.length) {
-                  return new SubCommandResult(subCommand, arguments, i, true, true, i - 1);
-                } else {
-                  return new SubCommandResult(subCommand, arguments, i + 1, false, true, i - (valid ? 1 : 0));
-                }
-              }
-            }
-          } else {
-            return new SubCommandResult(subCommand, arguments, 0);
-          }
-        }
+    if (arguments.length == 1) {
+      return new SubCommandResult(matched, arguments, 0);
+    }
+
+    if (matched.acceptOverflows) {
+      return new SubCommandResult(matched, arguments, 1);
+    }
+
+    SubCommandResult nested = this.querySubCommand(matched.subcommands,
+        Arrays.copyOfRange(arguments, 1, arguments.length));
+    if (nested.subCommand != null) {
+      return new SubCommandResult(nested.subCommand, arguments, nested.currentArgumentIndex + 1,
+          nested.isValid, nested.isUsage, nested.currentUsageIndex);
+    }
+
+    return checkUsageAgainstArguments(matched, arguments);
+  }
+
+  @Nullable
+  private SubCommand findSubCommand(@NotNull ArrayList<SubCommand> subCommands, @NotNull String name) {
+    for (SubCommand subCommand : subCommands) {
+      if (subCommand.name.equals(name) || Arrays.asList(subCommand.aliases).contains(name)) {
+        return subCommand;
       }
     }
-    return new SubCommandResult(null, arguments, 0);
+    return null;
+  }
+
+  private SubCommandResult checkUsageAgainstArguments(@NotNull SubCommand subCommand, @NotNull String[] arguments) {
+    int argLimit = Math.min(subCommand.usage.length, arguments.length - 1);
+    for (int i = 0; i < argLimit; i++) {
+      if (!matchesUsageOption(Arrays.asList(subCommand.usage[i]), arguments[i + 1])) {
+        return new SubCommandResult(subCommand, arguments, i + 1, false, true, i);
+      }
+    }
+
+    boolean allConsumed = arguments.length - 1 <= subCommand.usage.length;
+    return new SubCommandResult(subCommand, arguments, allConsumed ? argLimit : argLimit + 1,
+        allConsumed, true, argLimit - 1);
+  }
+
+  private boolean matchesUsageOption(List<String> options, String arg) {
+    if (containsUnofficialArgumentKeywords(options)) {
+      return true;
+    }
+    return (options.contains(arg) && !isOfficialArgumentKeyword(arg))
+        || (options.contains("%number%") && isStringInteger(arg))
+        || (options.contains("%decimal%") && isStringDouble(arg))
+        || (options.contains("%player%") && Bukkit.getPlayer(arg) != null);
   }
 
   protected void sendErrorMessage(@NotNull CommandSender sender, String[] arguments, Integer currentArgumentIndex) {
@@ -194,7 +190,7 @@ public class CommandManager implements TabExecutor {
   public ArrayList<SubCommand> getPermittedSubCommands(CommandSender sender) {
     ArrayList<SubCommand> permittedList = new ArrayList<>();
     for (SubCommand subCommand : subCommands) {
-      if (subCommand.senderHasPermission(sender)) {
+      if (subCommand.onPermission(sender)) {
         permittedList.add(subCommand);
       }
     }
@@ -237,28 +233,11 @@ public class CommandManager implements TabExecutor {
               options.add(subCommand.name);
             }
           }
-
           if (result.subCommand.usage.length > 0) {
-            for (String usage : result.subCommand.usage[0]) {
-              if (usage.equals("%player%")) {
-                for (Player player : Bukkit.getServer().getOnlinePlayers()) {
-                  options.add(player.getName());
-                }
-              } else if (!isArgumentKeyword(usage)) {
-                options.add(usage);
-              }
-            }
+            addUsageOptions(options, result.subCommand.usage[0]);
           }
         } else if (result.currentUsageIndex + 1 < result.subCommand.usage.length) {
-          for (String usage : result.subCommand.usage[result.currentUsageIndex + 1]) {
-            if (usage.equals("%player%")) {
-              for (Player player : Bukkit.getServer().getOnlinePlayers()) {
-                options.add(player.getName());
-              }
-            } else if (!isArgumentKeyword(usage)) {
-              options.add(usage);
-            }
-          }
+          addUsageOptions(options, result.subCommand.usage[result.currentUsageIndex + 1]);
         }
 
         List<String> tabResult = result.subCommand.onTabComplete(sender, command, alias, result);
@@ -281,5 +260,17 @@ public class CommandManager implements TabExecutor {
     }
 
     return options;
+  }
+
+  private void addUsageOptions(List<String> options, String[] usage) {
+    for (String u : usage) {
+      if (u.equals("%player%")) {
+        for (Player player : Bukkit.getServer().getOnlinePlayers()) {
+          options.add(player.getName());
+        }
+      } else if (!isArgumentKeyword(u)) {
+        options.add(u);
+      }
+    }
   }
 }

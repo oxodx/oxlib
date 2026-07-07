@@ -32,20 +32,7 @@ public abstract class OxConfig {
 
     try {
       this.rawConfiguration.load(file);
-
-      var migrationSteps = getApplicableMigrationSteps(rawConfiguration.getInt("config-version", 0), migrationParams);
-
-      for (var migration : migrationSteps) {
-        migration.accept(rawConfiguration);
-      }
-
-      if (!migrationSteps.isEmpty()) {
-        try {
-          rawConfiguration.save(file);
-        } catch (IOException e) {
-          e.printStackTrace();
-        }
-      }
+      applyMigrations(migrationParams);
     } catch (FileNotFoundException e) {
       OxLib.logger().severe("Config file not found: " + file.getName());
     } catch (IOException e) {
@@ -61,19 +48,21 @@ public abstract class OxConfig {
     this(file, null);
   }
 
-  private List<Consumer<YamlConfiguration>> getApplicableMigrationSteps(int from, Map<String, Object> migrationParams) {
-    if (migrationParams == null) {
-      if (getMigrationSteps().size() < from) {
-        return List.of();
-      }
-      return getMigrationSteps().subList(from, getMigrationSteps().size());
-    } else {
-      if (getMigrationSteps(migrationParams).size() < from) {
-        return List.of();
-      }
-      return getMigrationSteps(migrationParams).subList(from, getMigrationSteps(migrationParams).size());
+  private void applyMigrations(Map<String, Object> migrationParams) {
+    int from = rawConfiguration.getInt("config-version", 0);
+    var steps = migrationParams == null ? getMigrationSteps() : getMigrationSteps(migrationParams);
+    if (steps.size() <= from) {
+      return;
     }
 
+    for (var migration : steps.subList(from, steps.size())) {
+      migration.accept(rawConfiguration);
+    }
+    try {
+      rawConfiguration.save(file);
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
   }
 
   protected List<Consumer<YamlConfiguration>> getMigrationSteps() {

@@ -35,14 +35,10 @@ public abstract class SubCommand {
     return this;
   }
 
-  public boolean senderHasPermission(CommandSender sender) {
-    return onPermission(sender);
-  }
-
   public ArrayList<SubCommand> getPermittedSubCommands(@NotNull CommandSender sender) {
     ArrayList<SubCommand> permittedList = new ArrayList<>();
     for (SubCommand subcommand : subcommands) {
-      if (subcommand.senderHasPermission(sender)) {
+      if (subcommand.onPermission(sender)) {
         permittedList.add(subcommand);
       }
     }

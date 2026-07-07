@@ -7,6 +7,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -140,80 +141,50 @@ public final class ConfigManager {
 
   private static void handleListLoading(Field field, Object config, ConfigurationSection section, String key)
       throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
-    List<?> listSection = section.getList(key);
-    if (listSection == null) {
-      if (field.get(config) == null) {
-        field.set(config, new ArrayList<>());
-      }
-      return;
+    List<Object> items = loadCollectionItems(field, section, key);
+    if (items != null) {
+      field.set(config, items);
+    } else if (field.get(config) == null) {
+      field.set(config, new ArrayList<>());
     }
-
-    Type genericType = field.getGenericType();
-    if (!(genericType instanceof ParameterizedType)) {
-      return;
-    }
-
-    ParameterizedType parameterizedType = (ParameterizedType) genericType;
-    Type typeArgument = parameterizedType.getActualTypeArguments()[0];
-    if (!(typeArgument instanceof Class<?>)) {
-      return;
-    }
-    Class<?> itemType = (Class<?>) typeArgument;
-
-    List<Object> list = new ArrayList<>();
-    for (Object elem : listSection) {
-      if (elem instanceof Map) {
-        Map<?, ?> subSection = (Map<?, ?>) elem;
-        Object item = itemType.getDeclaredConstructor().newInstance();
-        var ss = deepMapToConfigurationSection(subSection);
-
-        load(item, ss);
-
-        list.add(item);
-      } else if (isPrimitiveOrWrapper(itemType)) {
-        list.add(loadPrimitiveType(itemType, elem));
-      }
-    }
-    field.set(config, list);
   }
 
   private static void handleSetLoading(Field field, Object config, ConfigurationSection section, String key)
       throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
-    List<?> listSection = section.getList(key);
-    if (listSection == null) {
-      if (field.get(config) == null) {
-        field.set(config, new HashSet<>());
-      }
-      return;
+    List<Object> items = loadCollectionItems(field, section, key);
+    if (items != null) {
+      field.set(config, new HashSet<>(items));
+    } else if (field.get(config) == null) {
+      field.set(config, new HashSet<>());
+    }
+  }
+
+  private static List<Object> loadCollectionItems(Field field, ConfigurationSection section, String key)
+      throws NoSuchMethodException, InvocationTargetException, InstantiationException, IllegalAccessException {
+    List<?> raw = section.getList(key);
+    if (raw == null) {
+      return null;
     }
 
     Type genericType = field.getGenericType();
-    if (!(genericType instanceof ParameterizedType)) {
-      return;
+    if (!(genericType instanceof ParameterizedType parameterizedType)) {
+      return null;
+    }
+    if (!(parameterizedType.getActualTypeArguments()[0] instanceof Class<?> itemType)) {
+      return null;
     }
 
-    ParameterizedType parameterizedType = (ParameterizedType) genericType;
-    Type typeArgument = parameterizedType.getActualTypeArguments()[0];
-    if (!(typeArgument instanceof Class<?>)) {
-      return;
-    }
-    Class<?> itemType = (Class<?>) typeArgument;
-
-    Set<Object> list = new HashSet<>();
-    for (Object elem : listSection) {
-      if (elem instanceof Map) {
-        Map<?, ?> subSection = (Map<?, ?>) elem;
+    List<Object> items = new ArrayList<>();
+    for (Object elem : raw) {
+      if (elem instanceof Map map) {
         Object item = itemType.getDeclaredConstructor().newInstance();
-        var ss = deepMapToConfigurationSection(subSection);
-
-        load(item, ss);
-
-        list.add(item);
+        load(item, deepMapToConfigurationSection(map));
+        items.add(item);
       } else if (isPrimitiveOrWrapper(itemType)) {
-        list.add(loadPrimitiveType(itemType, elem));
+        items.add(loadPrimitiveType(itemType, elem));
       }
     }
-    field.set(config, list);
+    return items;
   }
 
   public static String serializeKey(String fieldName) {
@@ -286,49 +257,15 @@ public final class ConfigManager {
       try {
         if (isPrimitiveOrWrapper(field.getType())) {
           map.put(key, field.get(object));
-        } else if (Set.class.isAssignableFrom(field.getType())) {
-          Set<?> list = (Set<?>) field.get(object);
-          if (!(field.getGenericType() instanceof ParameterizedType parameterizedType)) {
-            continue;
-          }
-
-          Type typeArgument = parameterizedType.getActualTypeArguments()[0];
-          if (!(typeArgument instanceof Class<?>)) {
-            continue;
-          }
-          Class<?> itemType = (Class<?>) typeArgument;
-          if (isPrimitiveOrWrapper(itemType)) {
-            map.put(key, list);
-          } else {
-            List<Map<String, Object>> complexList = new ArrayList<>();
-            for (Object elem : list) {
-              if (elem != null) {
-                complexList.add(deepMapObjectToMap(elem));
-              }
-            }
-            map.put(key, complexList);
-          }
         } else if (List.class.isAssignableFrom(field.getType())) {
-          List<?> list = (List<?>) field.get(object);
-          if (!(field.getGenericType() instanceof ParameterizedType parameterizedType)) {
-            continue;
+          Object result = serializeCollectionToMap(field, (Collection<?>) field.get(object));
+          if (result != null) {
+            map.put(key, result);
           }
-
-          Type typeArgument = parameterizedType.getActualTypeArguments()[0];
-          if (!(typeArgument instanceof Class<?>)) {
-            continue;
-          }
-          Class<?> itemType = (Class<?>) typeArgument;
-          if (isPrimitiveOrWrapper(itemType)) {
-            map.put(key, list);
-          } else {
-            List<Map<String, Object>> complexList = new ArrayList<>();
-            for (Object elem : list) {
-              if (elem != null) {
-                complexList.add(deepMapObjectToMap(elem));
-              }
-            }
-            map.put(key, complexList);
+        } else if (Set.class.isAssignableFrom(field.getType())) {
+          Object result = serializeCollectionToMap(field, (Collection<?>) field.get(object));
+          if (result != null) {
+            map.put(key, result);
           }
         } else if (Map.class.isAssignableFrom(field.getType())) {
           Map<?, ?> mapObject = (Map<?, ?>) field.get(object);
@@ -351,6 +288,30 @@ public final class ConfigManager {
     return map;
   }
 
+  private static List<Map<String, Object>> serializeComplexCollection(Collection<?> collection) {
+    List<Map<String, Object>> result = new ArrayList<>();
+    for (Object elem : collection) {
+      if (elem != null) {
+        result.add(deepMapObjectToMap(elem));
+      }
+    }
+    return result;
+  }
+
+  private static Object serializeCollectionToMap(Field field, Collection<?> collection) {
+    if (collection == null) {
+      return null;
+    }
+    if (!(field.getGenericType() instanceof ParameterizedType parameterizedType)) {
+      return null;
+    }
+    if (!(parameterizedType.getActualTypeArguments()[0] instanceof Class<?> itemType)) {
+      return null;
+    }
+
+    return isPrimitiveOrWrapper(itemType) ? collection : serializeComplexCollection(collection);
+  }
+
   public static void saveObject(Object config, ConfigurationSection section) {
     Field[] fields = config.getClass().getDeclaredFields();
 
@@ -370,30 +331,13 @@ public final class ConfigManager {
         if (isPrimitiveOrWrapper(field.getType())) {
           section.set(key, fieldValue);
         } else if (List.class.isAssignableFrom(field.getType())) {
-          List<?> list = (List<?>) fieldValue;
-          if (!list.isEmpty() && isPrimitiveOrWrapper(list.get(0).getClass())) {
-            section.set(key, list);
-          } else {
-            List<Map<String, Object>> complexList = new ArrayList<>();
-            for (Object elem : list) {
-              if (elem != null) {
-                complexList.add(deepMapObjectToMap(elem));
-              }
-            }
-            section.set(key, complexList);
-          }
+          section.set(key, serializeCollectionToMap(field, (List<?>) fieldValue));
         } else if (Set.class.isAssignableFrom(field.getType())) {
           Set<?> set = (Set<?>) fieldValue;
-          if (!set.isEmpty() && isPrimitiveOrWrapper(set.stream().findFirst().get().getClass())) {
+          if (!set.isEmpty() && isPrimitiveOrWrapper(set.iterator().next().getClass())) {
             section.set(key, new ArrayList<>(set));
           } else {
-            List<Map<String, Object>> complexList = new ArrayList<>();
-            for (Object elem : set) {
-              if (elem != null) {
-                complexList.add(deepMapObjectToMap(elem));
-              }
-            }
-            section.set(key, complexList);
+            section.set(key, serializeComplexCollection(set));
           }
         } else if (Map.class.isAssignableFrom(field.getType())) {
           Map<?, ?> map = (Map<?, ?>) fieldValue;
@@ -430,27 +374,4 @@ public final class ConfigManager {
     }
   }
 
-  public static void syncConfigurations(ConfigurationSection oldConfig, ConfigurationSection newConfig) {
-    removeExtraKeys(oldConfig, newConfig);
-
-    addMissingKeys(oldConfig, newConfig);
-  }
-
-  private static void removeExtraKeys(ConfigurationSection oldConfig, ConfigurationSection newConfig) {
-    oldConfig.getKeys(true).forEach(key -> {
-      if (!newConfig.contains(key)) {
-        oldConfig.set(key, null);
-      }
-    });
-  }
-
-  private static void addMissingKeys(ConfigurationSection oldConfig, ConfigurationSection newConfig) {
-    for (String key : newConfig.getKeys(false)) {
-      if (!oldConfig.contains(key)) {
-        oldConfig.set(key, newConfig.get(key));
-      } else if (newConfig.isConfigurationSection(key) && oldConfig.isConfigurationSection(key)) {
-        addMissingKeys(oldConfig.getConfigurationSection(key), newConfig.getConfigurationSection(key));
-      }
-    }
-  }
 }
