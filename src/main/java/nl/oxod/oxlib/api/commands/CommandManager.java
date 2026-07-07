@@ -2,9 +2,10 @@ package nl.oxod.oxlib.api.commands;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
-import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.PluginCommand;
@@ -21,24 +22,20 @@ import nl.oxod.oxlib.OxLib;
 
 public class CommandManager implements TabExecutor {
   protected final OxLib plugin;
-
-  private SubCommand mainSubCommand;
-
-  public SubCommand getMainSubCommand() {
-
-    return mainSubCommand;
-  }
-
-  public final ArrayList<SubCommand> subCommands = new ArrayList<>();
+  private final List<SubCommand> roots = new ArrayList<>();
+  private SubCommand defaultCommand;
   public final PluginCommand command;
 
-  private static final String[] argumentKeywords = new String[] { "%number%", "%decimal%", "%player%" };
+  private record Resolve(SubCommand command, CmdContext context, @Nullable String error) {
+  }
+
+  private record Match(SubCommand command, int depth) {
+  }
 
   @edu.umd.cs.findbugs.annotations.SuppressFBWarnings("EI_EXPOSE_REP2")
-  public CommandManager(OxLib plugin, String command) {
+  public CommandManager(OxLib plugin, String commandName) {
     this.plugin = plugin;
-
-    this.command = this.plugin.getServer().getPluginCommand(command);
+    this.command = plugin.getServer().getPluginCommand(commandName);
     if (this.command != null) {
       this.command.setExecutor(this);
     }
@@ -46,231 +43,197 @@ public class CommandManager implements TabExecutor {
 
   public @NotNull CommandManager addSubCommand(@NotNull SubCommand subCommand) {
     subCommand.manager = this;
-    subCommands.add(subCommand);
+    roots.add(subCommand);
     return this;
   }
 
   public @NotNull CommandManager setMainSubCommand(@NotNull SubCommand subCommand) {
     subCommand.manager = this;
-    mainSubCommand = subCommand;
+    defaultCommand = subCommand;
     return this;
   }
 
   public @Nullable SubCommand getSubCommand(String name) {
-    for (SubCommand subCommand : subCommands) {
-      if (subCommand.name.equals(name) || Arrays.asList(subCommand.aliases).contains(name)) {
-        return subCommand;
-      }
-    }
-    return null;
-  }
-
-  public static boolean isStringDouble(String text) {
-    try {
-      Double.parseDouble(text);
-      return true;
-    } catch (Exception e) {
-      return false;
-    }
-  }
-
-  public static boolean isStringInteger(String text) {
-    try {
-      Integer.parseInt(text);
-      return true;
-    } catch (Exception e) {
-      return false;
-    }
-  }
-
-  public static boolean isArgumentKeyword(String keyword) {
-    return keyword.matches("^%.*%$");
-  }
-
-  public static boolean isOfficialArgumentKeyword(String keyword) {
-    return Arrays.asList(argumentKeywords).contains(keyword);
-  }
-
-  public static boolean isUnofficialArgumentKeyword(String keyword) {
-    return isArgumentKeyword(keyword) && !isOfficialArgumentKeyword(keyword);
-  }
-
-  public static boolean containsUnofficialArgumentKeywords(List<String> array) {
-    for (String text : array) {
-      if (isUnofficialArgumentKeyword(text)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  protected SubCommandResult querySubCommand(@NotNull ArrayList<SubCommand> subCommands, @NotNull String[] arguments) {
-    if (arguments.length == 0) {
-      return new SubCommandResult(null, arguments, 0);
-    }
-
-    SubCommand matched = findSubCommand(subCommands, arguments[0]);
-    if (matched == null) {
-      return new SubCommandResult(null, arguments, 0);
-    }
-
-    if (arguments.length == 1) {
-      return new SubCommandResult(matched, arguments, 0);
-    }
-
-    if (matched.acceptOverflows) {
-      return new SubCommandResult(matched, arguments, 1);
-    }
-
-    SubCommandResult nested = this.querySubCommand(matched.subcommands,
-        Arrays.copyOfRange(arguments, 1, arguments.length));
-    if (nested.subCommand != null) {
-      return new SubCommandResult(nested.subCommand, arguments, nested.currentArgumentIndex + 1,
-          nested.isValid, nested.isUsage, nested.currentUsageIndex);
-    }
-
-    return checkUsageAgainstArguments(matched, arguments);
-  }
-
-  @Nullable
-  private SubCommand findSubCommand(@NotNull ArrayList<SubCommand> subCommands, @NotNull String name) {
-    for (SubCommand subCommand : subCommands) {
-      if (subCommand.name.equals(name) || Arrays.asList(subCommand.aliases).contains(name)) {
-        return subCommand;
-      }
-    }
-    return null;
-  }
-
-  private SubCommandResult checkUsageAgainstArguments(@NotNull SubCommand subCommand, @NotNull String[] arguments) {
-    int argLimit = Math.min(subCommand.usage.length, arguments.length - 1);
-    for (int i = 0; i < argLimit; i++) {
-      if (!matchesUsageOption(Arrays.asList(subCommand.usage[i]), arguments[i + 1])) {
-        return new SubCommandResult(subCommand, arguments, i + 1, false, true, i);
-      }
-    }
-
-    boolean allConsumed = arguments.length - 1 <= subCommand.usage.length;
-    return new SubCommandResult(subCommand, arguments, allConsumed ? argLimit : argLimit + 1,
-        allConsumed, true, argLimit - 1);
-  }
-
-  private boolean matchesUsageOption(List<String> options, String arg) {
-    if (containsUnofficialArgumentKeywords(options)) {
-      return true;
-    }
-    return (options.contains(arg) && !isOfficialArgumentKeyword(arg))
-        || (options.contains("%number%") && isStringInteger(arg))
-        || (options.contains("%decimal%") && isStringDouble(arg))
-        || (options.contains("%player%") && Bukkit.getPlayer(arg) != null);
-  }
-
-  protected void sendErrorMessage(@NotNull CommandSender sender, String[] arguments, Integer currentArgumentIndex) {
-    String rightCommand = String.join(" ", Arrays.copyOfRange(arguments, 0, currentArgumentIndex));
-    String wrongCommand = String.join(" ", Arrays.copyOfRange(arguments, currentArgumentIndex, arguments.length));
-    if (sender instanceof Player) {
-      Player player = (Player) sender;
-      player.sendMessage(
-          Component.text()
-              .append(Component.text("[" + this.plugin.getName() + "]", NamedTextColor.RED, TextDecoration.BOLD)
-                  .clickEvent(ClickEvent.runCommand("/" + this.command.getName() + " help")))
-              .append(Component.text(" Incorrect argument for command:", NamedTextColor.RED, TextDecoration.BOLD))
-              .append(Component.newline())
-              .append(Component.text()
-                  .append(Component.text(
-                      "/" + this.plugin.getName() + " " + rightCommand + (currentArgumentIndex > 0 ? " " : ""),
-                      NamedTextColor.GRAY))
-                  .append(Component.text(wrongCommand, NamedTextColor.RED, TextDecoration.UNDERLINED))
-                  .clickEvent(ClickEvent.suggestCommand("/" + this.plugin.getName() + " " + rightCommand
-                      + (currentArgumentIndex > 0 ? " " : "") + wrongCommand)))
-              .build());
-    }
-  }
-
-  public ArrayList<SubCommand> getPermittedSubCommands(CommandSender sender) {
-    ArrayList<SubCommand> permittedList = new ArrayList<>();
-    for (SubCommand subCommand : subCommands) {
-      if (subCommand.onPermission(sender)) {
-        permittedList.add(subCommand);
-      }
-    }
-    return permittedList;
+    return findSubCommand(roots, name);
   }
 
   @Override
-  public boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label,
-      @NotNull String[] arguments) {
-    if (arguments.length > 0) {
-      SubCommandResult result = this.querySubCommand(this.getPermittedSubCommands(sender), arguments);
-
-      if (result.isValid()) {
-        return result.subCommand.onCommand(sender, command, label, result);
-      } else {
-        this.sendErrorMessage(sender, arguments, result.currentArgumentIndex);
-      }
-    } else if (this.mainSubCommand != null) {
-      return this.mainSubCommand.onCommand(sender, command, label,
-          new SubCommandResult(this.mainSubCommand, arguments, null));
+  public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd, @NotNull String label,
+      @NotNull String[] args) {
+    if (args.length == 0 && defaultCommand != null) {
+      defaultCommand.execute(new CmdContext(sender, label, Map.of(), List.of()));
+      return true;
     }
 
+    if (args.length == 0) {
+      return true;
+    }
+
+    Resolve resolved = resolve(roots, sender, args, 0);
+    if (resolved == null) {
+      sendError(sender, label, "Unknown command", args);
+      return true;
+    }
+
+    if (resolved.error() != null) {
+      sendError(sender, label, resolved.error(), args);
+      return true;
+    }
+
+    resolved.command().execute(resolved.context());
     return true;
   }
 
   @Override
-  public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
-      @NotNull String alias, @NotNull String[] arguments) {
-    List<String> options = new ArrayList<>();
-
-    if (arguments.length > 1) {
-      SubCommandResult result = this.querySubCommand(this.getPermittedSubCommands(sender),
-          Arrays.copyOfRange(arguments, 0, arguments.length - 1));
-
-      if (result.isValid()
-          && !(result.isUsage && !(result.currentUsageIndex + 1 <= result.subCommand.usage.length - 1))) {
-        if (!result.isUsage) {
-          for (SubCommand subCommand : result.subCommand.getPermittedSubCommands(sender)) {
-            if (subCommand.name.length() > 0) {
-              options.add(subCommand.name);
-            }
-          }
-          if (result.subCommand.usage.length > 0) {
-            addUsageOptions(options, result.subCommand.usage[0]);
-          }
-        } else if (result.currentUsageIndex + 1 < result.subCommand.usage.length) {
-          addUsageOptions(options, result.subCommand.usage[result.currentUsageIndex + 1]);
-        }
-
-        List<String> tabResult = result.subCommand.onTabComplete(sender, command, alias, result);
-        if (tabResult != null) {
-          options.addAll(tabResult);
-        }
-      }
-    } else {
-      for (SubCommand subCommand : this.getPermittedSubCommands(sender)) {
-        if (subCommand.name.length() > 0) {
-          options.add(subCommand.name);
-        }
-      }
+  public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command cmd,
+      @NotNull String alias, @NotNull String[] args) {
+    if (args.length == 1) {
+      return filterNames(roots, sender, args[0]);
     }
 
-    for (int i = options.size() - 1; i >= 0; i--) {
-      if (!options.get(i).toLowerCase().contains(arguments[arguments.length - 1].toLowerCase())) {
-        options.remove(i);
-      }
+    String[] path = Arrays.copyOf(args, args.length - 1);
+    Match match = findMatch(roots, sender, path, 0);
+
+    if (match == null) {
+      return args.length == 2 ? filterNames(roots, sender, args[args.length - 1]) : List.of();
     }
 
-    return options;
+    int argIndex = path.length - match.depth();
+    SubCommand target = match.command();
+
+    if (argIndex < 0) {
+      return filterNames(target.children, sender, args[args.length - 1]);
+    }
+
+    List<String> suggestions = new ArrayList<>();
+
+    if (argIndex < target.args().size()) {
+      suggestions.addAll(target.args().get(argIndex).complete());
+    }
+
+    List<String> custom = target.onTabComplete(sender, args, argIndex);
+    if (custom != null) {
+      suggestions.addAll(custom);
+    }
+
+    String partial = args[args.length - 1].toLowerCase();
+    suggestions.removeIf(s -> !s.toLowerCase().contains(partial));
+    return suggestions;
   }
 
-  private void addUsageOptions(List<String> options, String[] usage) {
-    for (String u : usage) {
-      if (u.equals("%player%")) {
-        for (Player player : Bukkit.getServer().getOnlinePlayers()) {
-          options.add(player.getName());
-        }
-      } else if (!isArgumentKeyword(u)) {
-        options.add(u);
+  @Nullable
+  private Match findMatch(List<SubCommand> candidates, CommandSender sender, String[] args, int offset) {
+    if (offset >= args.length) {
+      return null;
+    }
+    SubCommand matched = findSubCommand(candidates, args[offset]);
+    if (matched == null || !matched.onPermission(sender)) {
+      return null;
+    }
+
+    int next = offset + 1;
+    if (next < args.length && !matched.children.isEmpty()) {
+      Match deeper = findMatch(matched.children, sender, args, next);
+      if (deeper != null) {
+        return deeper;
       }
     }
+
+    return new Match(matched, next);
+  }
+
+  @Nullable
+  private Resolve resolve(List<SubCommand> candidates, CommandSender sender, String[] args, int offset) {
+    SubCommand matched = findSubCommand(candidates, args[offset]);
+    if (matched == null) {
+      return null;
+    }
+
+    if (!matched.onPermission(sender)) {
+      return null;
+    }
+
+    int next = offset + 1;
+    if (next < args.length && !matched.children.isEmpty()) {
+      Resolve nested = resolve(matched.children, sender, args, next);
+      if (nested != null) {
+        return nested;
+      }
+    }
+
+    int argCount = args.length - next;
+    List<CmdArg<?>> cmdArgs = matched.args();
+
+    if (argCount > cmdArgs.size()) {
+      return new Resolve(matched, null, "Too many arguments");
+    }
+
+    Map<String, Object> named = new LinkedHashMap<>();
+    List<Object> ordered = new ArrayList<>();
+
+    for (int i = 0; i < argCount; i++) {
+      CmdArg<?> argDef = cmdArgs.get(i);
+      Object value = argDef.parse(args[next + i]);
+      if (value == null) {
+        return new Resolve(matched, null, "Invalid " + describe(argDef) + ": " + args[next + i]);
+      }
+      named.put(argDef.name(), value);
+      ordered.add(value);
+    }
+
+    return new Resolve(matched, new CmdContext(sender, command.getLabel(), named, ordered), null);
+  }
+
+  private static String describe(CmdArg<?> arg) {
+    return switch (arg) {
+      case CmdArg.Player p -> "player '" + p.name() + "'";
+      case CmdArg.Int i -> "number '" + i.name() + "'";
+      case CmdArg.Decimal d -> "decimal '" + d.name() + "'";
+      case CmdArg.Text t -> "text '" + t.name() + "'";
+      case CmdArg.Literal l -> "option '" + l.name() + "'";
+    };
+  }
+
+  @Nullable
+  private SubCommand findSubCommand(List<SubCommand> candidates, String name) {
+    for (SubCommand sub : candidates) {
+      if (sub.name().equals(name) || sub.aliases().contains(name)) {
+        return sub;
+      }
+    }
+    return null;
+  }
+
+  private List<String> filterNames(List<SubCommand> candidates, CommandSender sender, String partial) {
+    List<String> result = new ArrayList<>();
+    for (SubCommand sub : candidates) {
+      if (sub.onPermission(sender) && !sub.name().isEmpty()
+          && sub.name().toLowerCase().startsWith(partial.toLowerCase())) {
+        result.add(sub.name());
+      }
+    }
+    return result;
+  }
+
+  private void sendError(CommandSender sender, String label, String message, @Nullable String[] args) {
+    if (!(sender instanceof Player player)) {
+      sender.sendMessage("[" + plugin.getName() + "] " + message);
+      return;
+    }
+
+    Component msg = Component.text()
+        .append(Component.text("[" + plugin.getName() + "]", NamedTextColor.RED, TextDecoration.BOLD)
+            .clickEvent(ClickEvent.runCommand("/" + label + " help")))
+        .append(Component.text(" " + message, NamedTextColor.RED))
+        .build();
+
+    if (args != null && args.length > 0) {
+      String full = "/" + label + " " + String.join(" ", args);
+      msg = msg.append(Component.newline())
+          .append(Component.text(full, NamedTextColor.GRAY)
+              .clickEvent(ClickEvent.suggestCommand(full)));
+    }
+
+    player.sendMessage(msg);
   }
 }

@@ -3,59 +3,78 @@ package nl.oxod.oxlib.api.commands;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.plugin.Plugin;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
-@edu.umd.cs.findbugs.annotations.SuppressFBWarnings("URF_UNREAD_PUBLIC_OR_PROTECTED_FIELD")
 public abstract class SubCommand {
-
   CommandManager manager;
-  public final ArrayList<SubCommand> subcommands = new ArrayList<>();
+  final List<SubCommand> children = new ArrayList<>();
 
-  public String name = "";
-  public String info = "";
-  public String[] aliases = new String[0];
-  public String[][] usage = new String[0][];
-  public Boolean acceptOverflows = false;
+  private String cmdName = "";
+  private String description = "";
+  private List<CmdArg<?>> cmdArgs = List.of();
+  private List<String> aliasList = List.of();
 
-  public Plugin getPlugin() {
-    if (this.manager != null) {
-      return this.manager.plugin;
-    } else {
-      return null;
-    }
+  protected SubCommand() {}
+
+  protected SubCommand(String name) {
+
+    this.cmdName = name;
   }
 
-  public @NotNull SubCommand addSubCommand(@NotNull SubCommand subcommand) {
-    subcommand.manager = this.manager;
-    subcommands.add(subcommand);
+  protected SubCommand(String name, String description, List<CmdArg<?>> args, String... aliases) {
+    this.cmdName = name;
+    this.description = description;
+    this.cmdArgs = args;
+    this.aliasList = List.of(aliases);
+  }
+
+  public Plugin getPlugin() {
+    return manager != null ? manager.plugin : null;
+  }
+
+  public @NotNull SubCommand addChild(@NotNull SubCommand child) {
+    child.manager = this.manager;
+    children.add(child);
     return this;
   }
 
-  public ArrayList<SubCommand> getPermittedSubCommands(@NotNull CommandSender sender) {
-    ArrayList<SubCommand> permittedList = new ArrayList<>();
-    for (SubCommand subcommand : subcommands) {
-      if (subcommand.onPermission(sender)) {
-        permittedList.add(subcommand);
-      }
-    }
-    return permittedList;
-  }
-
-  public Boolean onPermission(CommandSender sender) {
+  public boolean onPermission(CommandSender sender) {
     return true;
   }
 
-  public Boolean onCommand(@NotNull CommandSender sender, @NotNull Command command, @NotNull String label,
-      SubCommandResult result) {
-    return false;
+  public void execute(CmdContext ctx) {
   }
 
-  public @Nullable List<String> onTabComplete(@NotNull CommandSender sender, @NotNull Command command,
-      @NotNull String alias, SubCommandResult result) {
+  public @Nullable List<String> onTabComplete(CommandSender sender, String[] args, int argIndex) {
     return null;
+  }
+
+  ArrayList<SubCommand> getPermittedChildren(CommandSender sender) {
+    ArrayList<SubCommand> result = new ArrayList<>();
+    for (SubCommand child : children) {
+      if (child.onPermission(sender)) {
+        result.add(child);
+      }
+    }
+    return result;
+  }
+
+  String name() {
+    return cmdName;
+  }
+
+  String description() {
+    return description;
+  }
+
+  List<CmdArg<?>> args() {
+    return cmdArgs;
+  }
+
+  List<String> aliases() {
+    return aliasList;
   }
 }
