@@ -61,11 +61,11 @@ val mockitoAgent = configurations.create("mockitoAgent")
 dependencies {
   compileOnly("io.papermc.paper:paper-api:26.2.build.124-stable")
 
-  compileOnly("org.projectlombok:lombok:1.18.46")
-	annotationProcessor("org.projectlombok:lombok:1.18.46")
+  compileOnly("org.projectlombok:lombok:1.18.48")
+	annotationProcessor("org.projectlombok:lombok:1.18.48")
 
-	testCompileOnly("org.projectlombok:lombok:1.18.46")
-	testAnnotationProcessor("org.projectlombok:lombok:1.18.46")
+	testCompileOnly("org.projectlombok:lombok:1.18.48")
+	testAnnotationProcessor("org.projectlombok:lombok:1.18.48")
 
   // Code quality and unit testing
   compileOnly("com.github.spotbugs:spotbugs-annotations:4.10.4")
