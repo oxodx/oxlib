@@ -68,9 +68,9 @@ dependencies {
 	testAnnotationProcessor("org.projectlombok:lombok:1.18.48")
 
   // Code quality and unit testing
-  compileOnly("com.github.spotbugs:spotbugs-annotations:4.10.4")
+  compileOnly("com.github.spotbugs:spotbugs-annotations:4.10.5")
   spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")
-  testCompileOnly("com.github.spotbugs:spotbugs-annotations:4.10.4")
+  testCompileOnly("com.github.spotbugs:spotbugs-annotations:4.10.5")
   testImplementation("io.papermc.paper:paper-api:26.2.build.133-stable")
   testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.3")
