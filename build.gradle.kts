@@ -59,7 +59,7 @@ repositories {
 val mockitoAgent = configurations.create("mockitoAgent")
 
 dependencies {
-  compileOnly("io.papermc.paper:paper-api:26.3.build.199-stable")
+  compileOnly("io.papermc.paper:paper-api:26.3.build.214-stable")
 
   compileOnly("org.projectlombok:lombok:1.18.48")
 	annotationProcessor("org.projectlombok:lombok:1.18.48")
@@ -71,7 +71,7 @@ dependencies {
   compileOnly("com.github.spotbugs:spotbugs-annotations:4.10.5")
   spotbugsPlugins("com.h3xstream.findsecbugs:findsecbugs-plugin:1.14.0")
   testCompileOnly("com.github.spotbugs:spotbugs-annotations:4.10.5")
-  testImplementation("io.papermc.paper:paper-api:26.3.build.199-stable")
+  testImplementation("io.papermc.paper:paper-api:26.3.build.214-stable")
   testImplementation("org.junit.jupiter:junit-jupiter:6.1.3")
   testRuntimeOnly("org.junit.platform:junit-platform-launcher:6.1.3")
 
